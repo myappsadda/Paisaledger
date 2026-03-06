@@ -1,10 +1,10 @@
-const CACHE_NAME = 'cash-ledger-v2';
+const CACHE_NAME = 'paisaledger-v2';
 const ASSETS = [
-  '/Cash-ledger/',
-  '/Cash-ledger/index.html',
-  '/Cash-ledger/manifest.webmanifest',
-  '/Cash-ledger/icon-192.png',
-  '/Cash-ledger/icon-512.png'
+  '/Paisaledger/',
+  '/Paisaledger/index.html',
+  '/Paisaledger/manifest.webmanifest',
+  '/Paisaledger/icon-192.png',
+  '/Paisaledger/icon-512.png'
 ];
 self.addEventListener('install', event => {
   event.waitUntil(
