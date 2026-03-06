@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cash Ledger — Single File</title>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b74de">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+
+  <style>
+    :root{--bg:#fff;--muted:#666;--accent:#0b74de;--danger:#ff4d4f;--card:#fafafa;--border:#eee}
+    *{box-sizing:border-box;font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
+    body{margin:0;background:var(--bg);color:#111;padding:12px}
+    .container{max-width:980px;margin:10px auto}
+    .card{background:#fff;border:1px solid var(--border);padding:12px;border-radius:10px}
+    details{border:1px solid var(--border);border-radius:8px;padding:6px;background:#fff;margin-bottom:10px}
+    summary{list-style:none;cursor:pointer;padding:8px;display:flex;justify-content:space-between;align-items:center;font-weight:700}
+    summary::-webkit-details-marker{display:none}
+    .section-body{padding:6px 8px 10px}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input,select,button,textarea{font-size:14px}
+    input[type=text], input[type=number], input[type=date], select, textarea, input[type=month]{
+      width:100%; padding:8px; border-radius:8px; border:1px solid #ddd;
+    }
+    .small{width:160px;min-width:90px}
+    button{background:var(--accent);color:#fff;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .muted{color:var(--muted);font-size:13px}
+    .muted-box{padding:8px;border-radius:6px;background:var(--card);border:1px solid #f0f0f0;color:var(--muted)}
+    .compact-manage{display:flex;gap:8px;align-items:center;margin-top:6px}
+    .del-small{background:var(--danger);color:#fff;border:0;padding:6px 8px;border-radius:8px;cursor:pointer}
+    .txn-scroll{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:8px;padding:6px 0;max-height:250px;}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:720px}
+    thead th{font-weight:600;text-align:left;padding:10px 12px;border-bottom:1px solid #eee;font-size:13px}
+    tbody td{padding:12px;border-bottom:1px solid #fafafa;font-size:13px;vertical-align:middle}
+    .right{text-align:right}.positive{color:green}.negative{color:red}.tiny{font-size:12px;color:var(--muted)}
+    .actions-cell{width:40px;text-align:center;background:#fff}thead th.actions-cell{width:40px}
+    .pending-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px}
+    .pending-top{display:flex;justify-content:space-between;align-items:center;font-weight:600}
+    .pending-amount{font-weight:700}
+    .settle-btn{background:#fff;border:1px solid #ddd;color:#333;padding:5px 10px;border-radius:6px;cursor:pointer}
+    .amount-row{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #f5f5f5}
+    .amount-total{display:flex;justify-content:space-between;padding:10px 8px;font-weight:700;border-top:1px solid #eee;margin-top:6px}
+    .amount-empty{padding:8px;color:var(--muted)}
+    .footer-export{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
+    @media (max-width:640px){table{min-width:600px}}
+  </style>
+</head>
+<body>
+  <div class="container card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <strong>Cash Ledger</strong>
+      <div class="muted tiny">Single-file app</div>
+    </div>
+
+    <!-- People -->
+    <details>
+      <summary><span>Add / Manage People</span></summary>
+      <div class="section-body">
+        <label>Person (add)</label>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <input id="personName" type="text" placeholder="Enter person name" />
+          <button id="addPerson" type="button">Add</button>
+        </div>
+
+        <label>Manage People</label>
+        <div class="compact-manage">
+          <select id="managePerson"><option value="none">-- select person --</option></select>
+          <button id="deletePersonBtn" class="del-small" type="button">Delete</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- Add Transaction -->
+    <details>
+      <summary><span>Add Transaction</span></summary>
+      <div class="section-body">
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px"><select id="personSelect"></select></div>
+          <div style="width:140px"><input id="amount" type="number" step="0.01" placeholder="Amount" /></div>
+          <div style="width:220px"><select id="direction" class="small">
+            <option value="pending-they">Pending — They owe me (+)</option>
+            <option value="pending-me">Pending — I owe them (-)</option>
+            <option value="received">Payment Received</option>
+            <option value="given">Payment Given</option>
+          </select></div>
+        </div>
+        <input id="desc" type="text" placeholder="Description (optional)" style="margin-bottom:8px" />
+        <div style="display:flex;gap:8px">
+          <button id="addTxn" type="button">Add</button>
+          <button id="clearAll" type="button" style="background:#f1f1f1;color:#333">Clear All</button>
+        </div>
+      </div>
+    </details>
+
+    
+    <!-- Bulk Add Transactions -->
+    <details>
+      <summary><span>Bulk Add Transactions</span></summary>
+      <div class="section-body">
+        <div class="muted tiny">One per line: Person | Amount | type(pending-they, pending-me, received, given) | description(optional)</div>
+        <textarea id="bulkInput" rows="6" placeholder="John | 200 | pending-they | snacks
+Mary | 500 | received | cash"></textarea>
+        <button id="bulkAddBtn" type="button" style="margin-top:8px">Add All</button>
+      </div>
+    </details>
+
+
+    <!-- Balances -->
+    <details>
+      <summary><span>Balances by Person</span></summary>
+      <div class="section-body">
+        <select id="balanceFilter"><option value="none">-- select person --</option></select>
+        <div id="balancesArea" class="muted-box">No person selected</div>
+        <div style="margin-top:8px;font-weight:600">Total Pending: <span id="totalPending">0.00</span></div>
+      </div>
+    </details>
+
+    <!-- Amounts pending -->
+    <details id="amountsDetails">
+      <summary><span>Amounts pending</span></summary>
+      <div class="section-body" id="amountsArea">
+        <div class="amount-empty">No people yet</div>
+      </div>
+    </details>
+
+    <!-- Amount Received -->
+    <details id="amountReceivedDetails">
+      <summary><span>Amount Received</span></summary>
+      <div class="section-body">
+        <label>Select month</label>
+        <input id="receivedMonth" type="month" />
+        <div id="receivedArea" class="muted-box" style="margin-top:8px;padding:10px">No month selected</div>
+      </div>
+    </details>
+
+    <!-- Export CSV -->
+    <details>
+      <summary><span>Export (CSV)</span></summary>
+      <div class="section-body">
+        <label>Select month to export (affects payments and pendings with matching date)</label>
+        <input id="exportMonth" type="month" />
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <label style="font-size:13px;color:var(--muted)"><input id="exportIncludeAllPendings" type="checkbox" style="margin-right:8px" /> Include all pending items (ignore month)</label>
+        </div>
+        <div class="footer-export">
+          <button id="exportCsvBtn" type="button">Export CSV</button>
+        </div>
+        <div id="exportStatus" class="tiny muted" style="margin-top:8px"></div>
+      </div>
+    </details>
+
+    <!-- Backup / Restore -->
+    <details>
+      <summary><span>Backup / Restore (JSON)</span></summary>
+      <div class="section-body">
+        <div class="muted tiny" style="margin-bottom:6px">Export or import the full app data (people, pendings, payments).</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="exportJsonBtn" type="button">Export JSON</button>
+          <button id="importJsonBtn" type="button" style="background:#f1f1f1;color:#333">Import JSON</button>
+          <input id="importFile" type="file" accept="application/json,.json" style="display:none" />
+        </div>
+        <div id="importExportStatus" class="tiny muted" style="margin-top:8px"></div>
+      </div>
+    </details>
+
+    <!-- Pending -->
+    <details>
+      <summary><span>Pending Items</span></summary>
+      <div class="section-body">
+        <select id="pendingFilter"><option value="none">-- select person --</option><option value="all">Show all</option></select>
+        <div id="pendingArea" class="muted-box"><div id="pendingListInner"></div></div>
+      </div>
+    </details>
+
+    <!-- Transactions -->
+    <details>
+      <summary><span>Transactions</span></summary>
+      <div class="section-body">
+        <div style="margin:8px 0">
+          <label>Filter by month</label>
+          <input id="txnMonthFilter" type="month" />
+        </div>
+
+        <select id="txnFilter"><option value="none">-- select person --</option><option value="all">Show all</option></select>
+        <div class="txn-scroll muted-box" id="txnArea">No person selected</div>
+      </div>
+    </details>
+  
+    
+    <!-- Quick Person Summary -->
+    <details>
+      <summary><span>Quick Summary</span></summary>
+      <div class="section-body">
+        <select id="summaryPerson"><option value="">-- select person --</option></select>
+        <label>Select month</label>
+        <input id="summaryMonth" type="month" />
+        <button id="generateSummaryBtn" type="button" style="margin-top:6px">Generate Summary</button>
+        <textarea id="summaryOutput" rows="6" style="margin-top:8px" placeholder="Summary will appear here..."></textarea>
+      </div>
+    </details>
+
+
+    <!-- Cloud Sync (Google Drive) -->
+    <details>
+      <summary><span>Cloud Sync (Google Drive)</span></summary>
+      <div class="section-body">
+        <div class="muted tiny" style="margin-bottom:6px">
+          Add your Google OAuth <strong>Client ID</strong>, sign in, then use manual sync or enable auto-sync.
+        </div>
+        <label>Google OAuth Client ID</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <input id="gclientId" type="text" placeholder="your-client-id.apps.googleusercontent.com" style="flex:1;min-width:260px" />
+          <button id="saveClientId" type="button">Save & Init</button>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+          <button id="gSignIn" type="button">Sign in</button>
+          <button id="gSignOut" type="button" style="background:#f1f1f1;color:#333">Sign out</button>
+          <button id="gSyncNow" type="button">Sync to Drive (Upload)</button>
+          <button id="gPullNow" type="button" style="background:#f1f1f1;color:#333">Restore from Drive (Download)</button>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label style="font-size:13px;color:var(--muted)">
+            Auto-sync every
+            <select id="gAutoMinutes" class="small">
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="15" selected>15</option>
+              <option value="30">30</option>
+              <option value="60">60</option>
+            </select>
+            minutes
+          </label>
+          <label style="font-size:13px;color:var(--muted)">
+            <input id="gAutoToggle" type="checkbox" style="margin-right:6px" /> Enable auto-sync
+          </label>
+        </div>
+
+        <div id="gStatus" class="tiny muted" style="margin-top:8px">Not signed in.</div>
+      </div>
+    </details>
+</div>
+
+  <script>
+  (function(){
+    'use strict';
+
+    // Storage key
+    const LS = 'cash-ledger-single-file-v1';
+
+    // Initial state
+    let state = { people: [], pendings: [], payments: [] };
+
+    // Utility helpers
+    const uid = () => Math.random().toString(36).slice(2,9);
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const esc = s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    const saveState = () => { try { localStorage.setItem(LS, JSON.stringify(state)); } catch(e){ console.error('Save error', e); } };
+
+    // DOM refs (lazy resolve)
+    const $ = id => document.getElementById(id);
+
+    // Load saved
+    try {
+      const raw = localStorage.getItem(LS);
+      if (raw) state = JSON.parse(raw);
+      // ensure arrays exist
+      state.people = Array.isArray(state.people) ? state.people : [];
+      state.pendings = Array.isArray(state.pendings) ? state.pendings : [];
+      state.payments = Array.isArray(state.payments) ? state.payments : [];
+    } catch(e) {
+      console.error('Load state failed', e);
+    }
+
+    // Remove any default "nikki" people if existed
+    (function removeNikki(){
+      try {
+        const lower = state.people.map(p => (p.name||'').toLowerCase());
+        if (lower.includes('nikki')) {
+          const ids = state.people.filter(p => (p.name||'').toLowerCase() === 'nikki').map(p=>p.id);
+          state.people = state.people.filter(p => !ids.includes(p.id));
+          state.pendings = state.pendings.filter(x => !ids.includes(x.personId));
+          state.payments = state.payments.filter(x => !ids.includes(x.personId));
+          saveState();
+        }
+      } catch(e){ /* ignore */ }
+    })();
+
+    // Compute balances map (personId -> number)
+    function computeBalances(){
+      const map = {};
+      state.people.forEach(p => map[p.id] = 0);
+      state.pendings.forEach(it => {
+        if (!it || !it.personId) return;
+        if (!(it.personId in map)) map[it.personId] = 0;
+        const amt = Number(it.amount) || 0;
+        map[it.personId] += (it.dir === 'pending-they' ? amt : -amt);
+      });
+      return map;
+    }
+
+    // Render functions
+    function renderPeopleSelects(){
+      const personSelect = $('personSelect');
+      const managePerson = $('managePerson');
+      const balanceFilter = $('balanceFilter');
+      const txnFilter = $('txnFilter');
+      const pendingFilter = $('pendingFilter');
+
+      const emptyOpt = '<option value="">-- select person --</option>';
+      const manageEmpty = '<option value="none">-- select person --</option>';
+      personSelect.innerHTML = emptyOpt;
+      managePerson.innerHTML = manageEmpty;
+      balanceFilter.innerHTML = manageEmpty;
+      txnFilter.innerHTML = '<option value="none">-- select person --</option><option value="all">Show all</option>';
+      pendingFilter.innerHTML = '<option value="none">-- select person --</option><option value="all">Show all</option>';
+
+      state.people.forEach(p => {
+        const o = `<option value="${p.id}">${esc(p.name)}</option>`;
+        personSelect.insertAdjacentHTML('beforeend', o);
+        managePerson.insertAdjacentHTML('beforeend', o);
+        balanceFilter.insertAdjacentHTML('beforeend', o);
+        txnFilter.insertAdjacentHTML('beforeend', o);
+        pendingFilter.insertAdjacentHTML('beforeend', o);
+      });
+
+      // no default selection for adding transaction
+      personSelect.value = '';
+    }
+
+    function renderBalances(){
+      const balanceFilter = $('balanceFilter');
+      const balancesArea = $('balancesArea');
+      const totalPendingEl = $('totalPending');
+      const map = computeBalances();
+      const total = Object.values(map).reduce((a,b)=>a+Number(b||0),0);
+      totalPendingEl.textContent = (total >= 0 ? '+' : '') + Number(total).toFixed(2);
+      if (!balanceFilter.value || balanceFilter.value === 'none') {
+        balancesArea.innerHTML = '<div class="muted">No person selected</div>';
+        return;
+      }
+      const person = state.people.find(p => p.id === balanceFilter.value);
+      if (!person) {
+        balancesArea.innerHTML = '<div class="muted">No person selected</div>';
+        return;
+      }
+      const b = Number(map[person.id] || 0);
+      balancesArea.innerHTML = `<div style="display:flex;justify-content:space-between"><div>${esc(person.name)}</div><div class="${b>=0?'positive':'negative'}">${(b>=0?'+':'')}${Number(b).toFixed(2)}</div></div>`;
+    }
+
+    function renderAmountsPending(){
+      const area = $('amountsArea');
+      const map = computeBalances();
+      if (!state.people.length) {
+        area.innerHTML = '<div class="amount-empty">No people yet</div>';
+        return;
+      }
+      let html = '';
+      let total = 0;
+      state.people.forEach(p => {
+        const b = Number(map[p.id] || 0);
+        total += b;
+        const sign = b >= 0 ? (b===0 ? '' : '+') : '';
+        html += `<div class="amount-row" data-id="${p.id}"><div class="name">${esc(p.name)}</div><div class="${b>=0?'positive':'negative'}">${sign}${Number(b).toFixed(2)}</div></div>`;
+      });
+      html += `<div class="amount-total"><div>Total</div><div class="${total>=0?'positive':'negative'}">${(total>=0?'+':'')}${Number(total).toFixed(2)}</div></div>`;
+      area.innerHTML = html;
+    }
+
+    function renderAmountReceived(){
+      const month = $('receivedMonth').value; // YYYY-MM
+      const area = $('receivedArea');
+      if (!month) {
+        area.innerHTML = '<div class="tiny muted">Choose a month above</div>';
+        return;
+      }
+      const payments = state.payments.filter(p => p.kind === 'received' && String(p.date||'').slice(0,7) === month);
+      if (!payments.length) {
+        area.innerHTML = '<div class="tiny muted">No received payments for selected month</div>';
+        return;
+      }
+      const map = {};
+      payments.forEach(p => { map[p.personId] = (map[p.personId] || 0) + Number(p.amount || 0); });
+      let html = '';
+      let total = 0;
+      state.people.forEach(p => {
+        const amt = Number(map[p.id] || 0);
+        if (amt === 0) return;
+        total += amt;
+        html += `<div class="amount-row"><div class="name">${esc(p.name)}</div><div class="positive">+${Number(amt).toFixed(2)}</div></div>`;
+      });
+      html += `<div class="amount-total"><div>Total received (${month})</div><div class="positive">+${Number(total).toFixed(2)}</div></div>`;
+      area.innerHTML = html;
+    }
+
+    function renderPendings(){
+      const listArea = $('pendingListInner');
+      const sel = $('pendingFilter').value || 'none';
+      if (sel === 'none') { listArea.innerHTML = '<div class="tiny muted">No person selected</div>'; return; }
+      const list = sel === 'all' ? state.pendings.slice() : state.pendings.filter(p => p.personId === sel);
+      if (!list.length) { listArea.innerHTML = '<div class="tiny muted">No pending items</div>'; return; }
+      listArea.innerHTML = '';
+      list.forEach(it => {
+        const person = state.people.find(p => p.id === it.personId) || { name: 'Unknown' };
+        const sign = it.dir === 'pending-they' ? '+' : '-';
+        const html = `<div class="pending-card" data-id="${it.id}">
+  <div class="pending-top">
+    <span>${esc(person.name)}</span>
+    <span class="tiny">${esc(it.createdDate||'')}</span>
+  </div>
+  <div class="tiny">${esc(it.desc||'—')}</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
+    <div class="pending-amount ${it.dir==='pending-they'?'positive':'negative'}">
+      ${sign}${Number(it.amount).toFixed(2)}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button class="settle-btn" data-id="${it.id}" title="Convert to payment">Settle</button>
+      <button class="edit-pending" data-id="${it.id}" title="Edit pending" style="background:#fff;border:1px solid #ddd;color:#333;padding:5px 10px;border-radius:6px;cursor:pointer">Edit</button>
+      <button class="del-pending"  data-id="${it.id}" title="Delete pending" style="background:var(--danger);color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;border:0">Delete</button>
+    </div>
+  </div>
+</div>`;
+        listArea.insertAdjacentHTML('beforeend', html);
+      });
+      // attach settle listeners
+      listArea.querySelectorAll('.settle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const item = state.pendings.find(p => p.id === id);
+          if (!item) return;
+          if (!confirm('Settle this pending item now? This converts it into a payment.')) return;
+          const kind = item.dir === 'pending-they' ? 'received' : 'given';
+          state.payments.push({
+            id: uid(), personId: item.personId, amount: Number(item.amount).toFixed(2),
+            date: todayISO(), desc: (item.desc||'') + ' (Settled)', kind,
+            consumed: [{ pendingId: item.id, amount: Number(item.amount).toFixed(2) }]
+          });
+          state.pendings = state.pendings.filter(p=>p.id!==id);
+          saveState();
+          renderAll();
+        });
+      });
+          // edit handlers
+listArea.querySelectorAll('.edit-pending').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.getAttribute('data-id');
+    editPending(id);
+  });
+});
+
+// delete handlers
+listArea.querySelectorAll('.del-pending').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.getAttribute('data-id');
+    deletePendingItem(id);
+  });
+});
+    }
+
+    function renderTransactions(){
+      const area = $('txnArea');
+      const pid = $('txnFilter').value || 'none';
+      if (pid === 'none') { area.innerHTML = '<div class="tiny muted" style="padding:12px">No person selected</div>'; return; }
+      let list = pid === 'all' ? state.payments.slice() : state.payments.filter(p => p.personId === pid);
+      list = list.filter(p => p.kind === 'received' || p.kind === 'given');
+      if (!list.length) { area.innerHTML = '<div class="tiny muted" style="padding:12px">No payments</div>'; return; }
+      list.sort((a,b) => new Date(a.date||'1970-01-01') - new Date(b.date||'1970-01-01'));
+      let html = '<div style="min-width:100%"><table><thead><tr><th>Date</th><th class="right">Received</th><th class="right">Given</th><th class="actions-cell"></th></tr></thead><tbody>';
+      list.forEach(p=>{
+        const recv = p.kind === 'received' ? '+' + Number(p.amount).toFixed(2) : '';
+        const giv = p.kind === 'given' ? '-' + Number(p.amount).toFixed(2) : '';
+        const safeDesc = esc(p.desc || '');
+        html += `<tr data-id="${esc(p.id)}"><td>${esc(p.date||'-')}${safeDesc?'<div class="tiny">'+safeDesc+'</div>':''}</td><td class="right positive">${recv}</td><td class="right negative">${giv}</td><td class="actions-cell"><button class="txn-del" data-id="${esc(p.id)}" title="Delete transaction" aria-label="Delete transaction" style="background:transparent;border:1px solid rgba(0,0,0,0.06);color:var(--danger);padding:6px;border-radius:6px;cursor:pointer">Del</button></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+      area.innerHTML = html;
+      // delete handlers
+      area.querySelectorAll('.txn-del').forEach(btn=>{
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          deletePayment(id);
+        });
+      });
+    }
+
+    function applyReceivedToPendings(personId, amount){
+      let remaining = Number(amount);
+      const consumed = [];
+      // iterate FIFO
+      for (let i=0;i<state.pendings.length && remaining>0;i++){
+        const p = state.pendings[i];
+        if (p.personId !== personId) continue;
+        const pendingAmt = Number(p.amount) || 0;
+        if (remaining >= pendingAmt){
+          consumed.push({ pendingId: p.id, amount: Number(pendingAmt).toFixed(2) });
+          remaining = Number((remaining - pendingAmt).toFixed(2));
+          state.pendings.splice(i,1);
+          i--;
+        } else {
+          consumed.push({ pendingId: p.id, amount: Number(remaining).toFixed(2) });
+          p.amount = Number((pendingAmt - remaining).toFixed(2));
+          remaining = 0;
+        }
+      }
+      return { remaining, consumed };
+    }
+
+    function deletePayment(paymentId){
+      const p = state.payments.find(x=>x.id===paymentId);
+      if(!p) return;
+      const person = state.people.find(x=>x.id===p.personId) || {name:'Unknown'};
+      if(!confirm(`Delete ${p.kind} ${p.amount} for ${person.name}? This will restore any consumed pending(s).`)) return;
+      if (p.kind === 'received'){
+        if (Array.isArray(p.consumed) && p.consumed.length){
+          p.consumed.forEach(c=>{
+            const pend = state.pendings.find(x=>x.id===c.pendingId);
+            const amt = Number(c.amount)||0;
+            if (pend){
+              pend.amount = Number((Number(pend.amount||0) + amt).toFixed(2));
+            } else {
+              state.pendings.push({ id: c.pendingId, personId: p.personId, amount: Number(amt).toFixed(2), dir: 'pending-they', desc: '(Restored from deleted payment) ' + (p.desc||''), createdDate: todayISO() });
+            }
+          });
+        } else {
+          state.pendings.push({ id: uid(), personId: p.personId, amount: Number(p.amount).toFixed(2), dir: 'pending-they', desc: '(Restored)', createdDate: todayISO() });
+        }
+      } else if (p.kind === 'given'){
+        state.pendings.push({ id: uid(), personId: p.personId, amount: Number(p.amount).toFixed(2), dir: 'pending-me', desc: '(Restored)', createdDate: todayISO() });
+      }
+      state.payments = state.payments.filter(x=>x.id!==paymentId);
+      saveState();
+      renderAll();
+    }
+    function editPending(id){
+  const it = state.pendings.find(p => p.id === id);
+  if (!it) return;
+
+  const person = state.people.find(p => p.id === it.personId) || { name: 'Unknown' };
+
+  // Amount
+  const amtStr = prompt(`Edit amount for ${person.name}`, String(it.amount));
+  if (amtStr === null) return; // cancelled
+  const amt = parseFloat(amtStr);
+  if (!(amt > 0)) { alert('Enter a positive amount'); return; }
+
+  // Description
+  const desc = prompt('Edit description', it.desc || '');
+  if (desc === null) return; // cancelled
+
+  // Direction
+  const current = it.dir === 'pending-they' ? 'they' : 'me';
+  const dirInput = prompt('Direction: type "they" (they owe me +) or "me" (I owe them -)', current);
+  if (dirInput === null) return; // cancelled
+  const dirNormalized = String(dirInput).trim().toLowerCase().startsWith('t') ? 'pending-they' : 'pending-me';
+
+  it.amount = Number(Math.abs(amt)).toFixed(2);
+  it.desc = (desc || '').trim();
+  it.dir = dirNormalized;
+
+  saveState();
+  renderAll();
+}
+
+function deletePendingItem(id){
+  const it = state.pendings.find(p => p.id === id);
+  if (!it) return;
+  const person = state.people.find(p => p.id === it.personId) || { name: 'Unknown' };
+  if (!confirm(`Delete pending ${it.amount} for ${person.name}? This cannot be undone.`)) return;
+
+  state.pendings = state.pendings.filter(p => p.id !== id);
+  saveState();
+  renderAll();
+}
+
+    // ===== events for Add person / Add transaction / delete person / export etc =====
+
+    function attachUIHandlers(){
+      // Add person
+      $('addPerson').addEventListener('click', ()=>{
+        try {
+          const name = ($('personName').value || '').trim();
+          if (!name) return alert('Enter a name');
+          // allow duplicates only with confirmation
+          if (state.people.some(p => (p.name||'').toLowerCase() === name.toLowerCase())) {
+            if (!confirm('Name exists. Add duplicate?')) return;
+          }
+          state.people.push({ id: uid(), name });
+          $('personName').value = '';
+          saveState();
+          renderAll();
+        } catch(e){ console.error('Add person error', e); $('exportStatus').textContent = 'Error adding person: '+e.message; }
+      });
+
+      // Delete person
+      $('deletePersonBtn').addEventListener('click', ()=>{
+        try {
+          const sel = $('managePerson').value;
+          if (!sel || sel === 'none') { alert('Choose a person to delete'); return; }
+          const person = state.people.find(p=>p.id===sel);
+          if (!person) return alert('Person not found');
+          if (!confirm(`Delete "${person.name}" and all their pending items and payments? This cannot be undone.`)) return;
+          state.people = state.people.filter(p=>p.id!==sel);
+          state.pendings = state.pendings.filter(x=>x.personId!==sel);
+          state.payments = state.payments.filter(x=>x.personId!==sel);
+          saveState();
+          renderAll();
+        } catch(e){ console.error('Delete person error', e); $('exportStatus').textContent = 'Error deleting person: '+e.message; }
+      });
+
+      // Add transaction
+      $('addTxn').addEventListener('click', ()=>{
+        try {
+          const pid = $('personSelect').value;
+          const amtRaw = $('amount').value;
+          const amt = parseFloat(amtRaw);
+          if (!pid) return alert('Choose a person');
+          if (!amt || isNaN(amt) || amt <= 0) return alert('Enter positive amount');
+          const dir = $('direction').value;
+          const desc = ($('desc').value || '').trim();
+
+          if (dir === 'pending-they' || dir === 'pending-me'){
+            state.pendings.push({ id: uid(), personId: pid, amount: Number(Math.abs(amt)).toFixed(2), dir, desc, createdDate: todayISO() });
+          } else if (dir === 'received'){
+            const { remaining, consumed } = applyReceivedToPendings(pid, Number(Math.abs(amt)));
+            state.payments.push({ id: uid(), personId: pid, amount: Number(Math.abs(amt)).toFixed(2), date: todayISO(), desc, kind: 'received', consumed: consumed || [] });
+            // NOTE: remaining amount (if >0) is currently not stored as extra pending or returned to user — business rule left as-is
+          } else if (dir === 'given'){
+            state.payments.push({ id: uid(), personId: pid, amount: Number(Math.abs(amt)).toFixed(2), date: todayISO(), desc, kind: 'given' });
+          }
+
+          // reset inputs
+          $('amount').value = '';
+          $('desc').value = '';
+          $('personSelect').value = '';
+          saveState();
+          renderAll();
+        } catch(e){ console.error('Add txn error', e); $('exportStatus').textContent = 'Error adding transaction: '+e.message; }
+      });
+
+      // Clear all
+      $('clearAll').addEventListener('click', ()=>{
+        if (!confirm('This will remove ALL data (people, pendings, payments). Continue?')) return;
+        state = { people: [], pendings: [], payments: [] };
+        saveState();
+        renderAll();
+      });
+
+      // Filters
+      $('balanceFilter').addEventListener('change', renderBalances);
+      $('pendingFilter').addEventListener('change', renderPendings);
+      $('txnFilter').addEventListener('change', renderTransactions);
+      // Amount sections toggles
+      $('amountsDetails').addEventListener('toggle', ()=>{ if ($('amountsDetails').open) renderAmountsPending(); });
+      $('amountReceivedDetails').addEventListener('toggle', ()=>{ if ($('amountReceivedDetails').open) renderAmountReceived(); populateSummaryPeople(); });
+      $('receivedMonth').addEventListener('change', renderAmountReceived);
+
+      // Export CSV
+      $('exportCsvBtn').addEventListener('click', exportCSV);
+
+      // Export / Import JSON
+      $('exportJsonBtn') && $('exportJsonBtn').addEventListener('click', exportJSON);
+      $('importJsonBtn') && $('importJsonBtn').addEventListener('click', ()=> $('importFile').click());
+      $('importFile') && $('importFile').addEventListener('change', handleImportFile);
+    }
+
+    // CSV export utility
+    function csvEscapeCell(s){
+      return '"' + String(s===undefined || s===null ? '' : String(s)).replace(/"/g,'""') + '"';
+    }
+    function toCSV(rows){
+      return rows.map(row => row.map(csvEscapeCell).join(',')).join('\n');
+    }
+
+    function exportCSV(){
+      try {
+        const month = $('exportMonth').value; // YYYY-MM
+        const includeAllPendings = $('exportIncludeAllPendings').checked;
+        if (!month && !includeAllPendings) {
+          if (!confirm('No month selected. Export will include all payments and no pendings (unless you check include all pending items). Continue?')) return;
+        }
+
+        const rows = [];
+        rows.push(['Type','Person','Date','Direction/Kind','Amount','Description']);
+
+        // Pendings
+        const pendings = includeAllPendings ? state.pendings.slice() : (month ? state.pendings.filter(p => String(p.createdDate||'').slice(0,7) === month) : []);
+        pendings.forEach(p => {
+          const person = state.people.find(x=>x.id===p.personId) || {name:'Unknown'};
+          rows.push(['PENDING', person.name, p.createdDate||'', p.dir, p.amount, p.desc||'']);
+        });
+
+        // Payments filtered by month if provided, else all
+        const payments = month ? state.payments.filter(pay => String(pay.date||'').slice(0,7) === month) : state.payments.slice();
+        payments.forEach(pay => {
+          const person = state.people.find(x=>x.id===pay.personId) || {name:'Unknown'};
+          const consumed = Array.isArray(pay.consumed) ? pay.consumed.map(c=>`${c.pendingId}:${c.amount}`).join('|') : '';
+          rows.push(['PAYMENT', person.name, pay.date||'', pay.kind, pay.amount, pay.desc||'']);
+        });
+
+        const csv = toCSV(rows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const filename = `cash-ledger-export-${month || 'all'}-${new Date().toISOString().slice(0,10)}.csv`;
+        if (navigator.msSaveOrOpenBlob) {
+          navigator.msSaveOrOpenBlob(blob, filename);
+        } else {
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+        $('exportStatus').textContent = `Exported ${(pendings.length + payments.length)} rows to ${filename}`;
+      } catch(e){
+        console.error('Export failed', e);
+        $('exportStatus').textContent = 'Export failed: ' + (e && e.message ? e.message : String(e));
+      }
+    }
+
+    // ===== JSON Backup / Restore =====
+    function exportJSON(){
+      try {
+        const payload = {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          data: {
+            people: state.people,
+            pendings: state.pendings,
+            payments: state.payments
+          }
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const filename = `cash-ledger-backup-${new Date().toISOString().slice(0,10)}.json`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        $('importExportStatus').textContent = `Backup exported to ${filename}`;
+      } catch(e){
+        console.error('JSON export failed', e);
+        $('importExportStatus').textContent = 'JSON export failed: ' + (e && e.message ? e.message : String(e));
+      }
+    }
+
+    function handleImportFile(evt){
+      const file = evt.target.files && evt.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const text = String(reader.result || '');
+          let obj = JSON.parse(text);
+          // Support {version, data:{...}} or direct state
+          const data = obj && obj.data ? obj.data : obj;
+          if (!data || typeof data !== 'object') throw new Error('Invalid JSON structure');
+
+          const imported = {
+            people: Array.isArray(data.people) ? data.people : [],
+            pendings: Array.isArray(data.pendings) ? data.pendings : [],
+            payments: Array.isArray(data.payments) ? data.payments : []
+          };
+          if (!confirm('Replace ALL current data with the imported backup? This cannot be undone.')) return;
+          state = imported;
+          saveState();
+          renderAll();
+          $('importExportStatus').textContent = `Imported ${imported.people.length} people, ${imported.pendings.length} pendings, ${imported.payments.length} payments.`;
+        } catch(e){
+          console.error('Import failed', e);
+          alert('Import failed: ' + (e && e.message ? e.message : String(e)));
+          $('importExportStatus').textContent = 'Import failed.';
+        } finally {
+          // reset file input to allow re-importing same file if needed
+          $('importFile').value = '';
+        }
+      };
+      reader.onerror = () => {
+        alert('Could not read file.');
+        $('importFile').value = '';
+      };
+      reader.readAsText(file);
+    }
+
+    // Render all
+    
+    // ===== Bulk add transactions =====
+    $('bulkAddBtn') && $('bulkAddBtn').addEventListener('click', ()=>{
+      const lines = ($('bulkInput').value||'').split('\n').map(l=>l.trim()).filter(Boolean);
+      if(!lines.length) return alert('No entries');
+      lines.forEach(line=>{
+        const parts = line.split('|').map(p=>p.trim());
+        if(parts.length < 3) return;
+        const [name, amtRaw, dir, desc] = parts;
+        const person = state.people.find(p=>p.name.toLowerCase()===name.toLowerCase());
+        if(!person) return;
+        const amt = parseFloat(amtRaw);
+        if(!(amt>0)) return;
+
+        if(dir==='pending-they' || dir==='pending-me'){
+          state.pendings.push({id:uid(), personId:person.id, amount:amt.toFixed(2), dir, desc:desc||'', createdDate:todayISO()});
+        } else if(dir==='received' || dir==='given'){
+          state.payments.push({id:uid(), personId:person.id, amount:amt.toFixed(2), date:todayISO(), desc:desc||'', kind:dir});
+        }
+      });
+      $('bulkInput').value='';
+      saveState();
+      renderAll();
+    });
+
+    // ===== Transactions month filter =====
+    $('txnMonthFilter') && $('txnMonthFilter').addEventListener('change', renderTransactions);
+
+    const _oldRenderTransactions = renderTransactions;
+    renderTransactions = function(){
+      const month = $('txnMonthFilter').value;
+      const area = $('txnArea');
+      const pid = $('txnFilter').value || 'none';
+      if (pid === 'none') { area.innerHTML = '<div class="tiny muted" style="padding:12px">No person selected</div>'; return; }
+
+      let list = pid === 'all' ? state.payments.slice() : state.payments.filter(p => p.personId === pid);
+      if(month) list = list.filter(p=>String(p.date||'').slice(0,7)===month);
+
+      list = list.filter(p => p.kind === 'received' || p.kind === 'given');
+
+      if (!list.length) { area.innerHTML = '<div class="tiny muted" style="padding:12px">No payments</div>'; return; }
+
+      list.sort((a,b)=> new Date(a.date)-new Date(b.date));
+
+      let html = '<div style="min-width:100%"><table><thead><tr><th>Date</th><th class="right">Received</th><th class="right">Given</th></tr></thead><tbody>';
+      list.forEach(p=>{
+        html += `<tr><td>${esc(p.date||'')}</td><td class="right positive">${p.kind==='received'?'+'+Number(p.amount).toFixed(2):''}</td><td class="right negative">${p.kind==='given'?'-'+Number(p.amount).toFixed(2):''}</td></tr>`;
+      });
+      html+='</tbody></table></div>';
+      area.innerHTML=html;
+    };
+
+    // ===== Quick summary (and WhatsApp friendly) =====
+    function populateSummaryPeople(){
+      const sel = $('summaryPerson');
+      if(!sel) return;
+      sel.innerHTML='<option value="">-- select person --</option>';
+      state.people.forEach(p=>{
+        sel.insertAdjacentHTML('beforeend', `<option value="${p.id}">${esc(p.name)}</option>`);
+      });
+    }
+
+    $('generateSummaryBtn') && $('generateSummaryBtn').addEventListener('click', ()=>{
+      const pid = $('summaryPerson').value;
+      const month = $('summaryMonth').value;
+      if(!pid) return alert('Select person');
+
+      const person = state.people.find(p=>p.id===pid);
+      let out = `Summary for ${person.name}` + (month?` (${month})`:'') + '\n\n';
+
+      const pendings = state.pendings.filter(p=>p.personId===pid && (!month || String(p.createdDate||'').slice(0,7)===month));
+      const payments = state.payments.filter(p=>p.personId===pid && (!month || String(p.date||'').slice(0,7)===month));
+
+      if(pendings.length){
+        out+='Pending:\n';
+        pendings.forEach(p=>{
+          out+=`${p.dir==='pending-they'?'They owe me':'I owe them'}: ${p.amount} - ${p.desc||''}\n`;
+        });
+        out+='\n';
+      }
+
+      if(payments.length){
+        out+='Payments:\n';
+        payments.forEach(p=>{
+          out+=`${p.kind}: ${p.amount} - ${p.desc||''}\n`;
+        });
+      }
+
+      if(!pendings.length && !payments.length) out+='No activity.';
+
+      $('summaryOutput').value = out;
+    });
+
+
+
+    function renderAll(){
+      renderPeopleSelects();
+      renderBalances();
+      renderAmountsPending();
+      renderPendings();
+      renderTransactions();
+      renderAmountReceived(); populateSummaryPeople();
+    }
+
+    // Initialization
+    function init(){
+      // ensure DOM elements exist
+      if (!$('personName')) {
+        console.error('DOM not ready');
+        return;
+      }
+      // set default months to current month
+      try {
+        const cur = new Date();
+        const mm = cur.toISOString().slice(0,7);
+        $('receivedMonth').value = mm;
+        $('exportMonth').value = mm;
+      } catch(e){ /* ignore */ }
+
+      attachUIHandlers();
+      renderAll();
+
+      // expose debug in console
+      window._cashLedger = {
+        stateRef: state,
+        save: saveState,
+        render: renderAll
+      };
+    }
+
+    // Wait for DOMContentLoaded then init
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+
+  })();
+  </script>
+
+  <script src="drive.js"></script>
+  <script>
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/Cash-ledger/service-worker.js', {
+  scope: '/Cash-ledger/'
+});.catch(function(e){ console.log('SW reg failed', e); });
+      });
+    }
+  </script>
+
+<button id="exportExcelBtn" style="margin:10px 0">Export Excel</button>
+<script>
+document.addEventListener("click", function(e){
+  if(e.target && e.target.id==="exportExcelBtn"){
+    const data = JSON.parse(localStorage.getItem("cashLedgerData") || "{}");
+    const txns = data.transactions || [];
+    if(!txns.length){
+      alert("No transactions to export");
+      return;
+    }
+
+    let csv = "Date,Person,Amount,Type,Description\n";
+    txns.forEach(t=>{
+      csv += [
+        t.date || "",
+        t.person || "",
+        t.amount || "",
+        t.kind || "",
+        (t.desc||"").replace(/,/g," ")
+      ].join(",") + "\n";
+    });
+
+    const blob = new Blob([csv],{type:"text/csv"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "transactions_export.csv";
+    a.click();
+  }
+});
+</script>
+</body>
+</html>
